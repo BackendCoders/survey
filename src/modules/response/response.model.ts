@@ -1,3 +1,5 @@
+/** @format */
+
 import mongoose, { Schema } from 'mongoose';
 
 interface ResponseComponent {
@@ -7,6 +9,7 @@ interface ResponseComponent {
 
 interface SurveyResponseType {
 	surveyId: Schema.Types.ObjectId;
+	email?: string;
 	components: [ResponseComponent];
 }
 
@@ -18,6 +21,7 @@ const ResponseComponentSchema = new Schema<ResponseComponent>({
 const ResponseSchema = new Schema<SurveyResponseType>(
 	{
 		surveyId: { type: Schema.Types.ObjectId, ref: 'Survey' },
+		email: { type: String },
 		components: { type: [ResponseComponentSchema], default: [] },
 	},
 	{
