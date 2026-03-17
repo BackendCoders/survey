@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import User from '@/modules/user/user.model';
 import AppError from '@/utils/appError';
 import { catchAsync } from '@/utils/catchAsync';
+import { verifyGoogleToken } from '@/utils/googleAuth';
 // import { mailService } from '@/service/mail.service';
 import { AuthRequest } from '@/types/auth-request';
 
@@ -33,6 +34,11 @@ export const signin = catchAsync(
 	async (req: Request, res: Response, next: NextFunction) => {
 		const { email, password } = req.body;
 		const user = await User.findOne({ email }).select('+password');
+		if (user?.isGoogleUser && !user.password) {
+			return next(
+				new AppError('This account uses Google sign-in. Continue with Google.', 401),
+			);
+		}
 		if (!user || !(await user.correctPassword(password, user.password)))
 			return next(new AppError('incorrect email or password', 401));
 		const token = signToken(String(user._id));
@@ -44,8 +50,64 @@ export const signin = catchAsync(
 	},
 );
 
-export const protect = catchAsync(
+export const googleSignin = catchAsync(
 	async (req: Request, res: Response, next: NextFunction) => {
+		const credential = req.body?.credential;
+		const requestedRole = req.body?.role;
+
+		if (!credential) {
+			return next(new AppError('Google credential is required', 400));
+		}
+
+		if (requestedRole && !['student', 'teacher'].includes(requestedRole)) {
+			return next(new AppError('Invalid role selected', 400));
+		}
+
+		const payload = await verifyGoogleToken(credential);
+		const email = payload.email?.toLowerCase();
+
+		if (!email) {
+			return next(new AppError('Google account email is missing', 400));
+		}
+
+		let user = await User.findOne({ email });
+
+		if (!user) {
+			user = await User.create({
+				name: payload.name || email.split('@')[0],
+				email,
+				photo: payload.picture,
+				isVerified: true,
+				isGoogleUser: true,
+				role: requestedRole || 'student',
+			});
+		} else {
+			const hasUpdates =
+				(user.isGoogleUser !== true) ||
+				(Boolean(payload.picture) && user.photo !== payload.picture) ||
+				(Boolean(payload.name) && user.name !== payload.name);
+
+			if (hasUpdates) {
+				user.isGoogleUser = true;
+				user.isVerified = true;
+				if (payload.picture) user.photo = payload.picture;
+				if (payload.name) user.name = payload.name;
+				await user.save({ validateBeforeSave: false });
+			}
+		}
+
+		const token = signToken(String(user._id));
+		const { password: _, ...userObject } = user.toObject();
+
+		res.status(200).json({
+			user: userObject,
+			token,
+		});
+	},
+);
+
+export const protect = catchAsync(
+	async (req: AuthRequest, res: Response, next: NextFunction) => {
 		let token: string | undefined;
 		// 1) check token and check if it is there
 		if (
@@ -108,17 +170,6 @@ export const forgotPassword = catchAsync(
 		)}/api/v1/users/resetPassword/${resetToken}`;
 
 		try {
-			// const mailResponse = await mailService.sendMail({
-			// 	from: process.env.EMAIL,
-			// 	to: req.body.email,
-			// 	subject: 'Password Change Link',
-			// 	text: resetURL,
-			// });
-
-			// if (mailResponse.rejected.length)
-			// 	return next(
-			// 		new AppError('failed to sent email do check your email', 400),
-			// 	);
 			res.status(200).json({
 				status: 'success',
 				message: 'message sent successfully',
@@ -137,7 +188,7 @@ export const forgotPassword = catchAsync(
 );
 
 export const updatePassword = catchAsync(
-	async (req: any, res: Response, next: NextFunction) => {
+	async (req: AuthRequest, res: Response, next: NextFunction) => {
 		// 1) find the user
 		if (!req.user) {
 			return next(new AppError('User not found', 404));
@@ -172,7 +223,7 @@ export const updatePassword = catchAsync(
 	},
 );
 
-export const getMe = (req: Request, res: Response, next: NextFunction) => {
+export const getMe = (req: AuthRequest, res: Response, next: NextFunction) => {
 	if (!req.user) return next(new AppError('User not found', 401));
 	res.status(200).json({
 		status: 'success',

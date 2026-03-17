@@ -39,19 +39,36 @@ const userSchema = new Schema<UserType>(
 		role: {
 			type: String,
 			enum: ['student', 'teacher'],
-			required: [true, 'Role is required'],
+			required: [
+				function (this: UserType) {
+					return !this.isGoogleUser;
+				},
+				'Role is required',
+			],
+			default: 'student',
 		},
 		password: {
 			type: String,
-			required: [true, 'Password is required'],
+			required: [
+				function (this: UserType) {
+					return !this.isGoogleUser;
+				},
+				'Password is required',
+			],
 			minlength: [8, 'Minimum 8-character password is required'],
 			select: false,
 		},
 		passwordConfirm: {
 			type: String,
-			required: [true, 'Password confirmation is required'],
+			required: [
+				function (this: UserType) {
+					return !this.isGoogleUser;
+				},
+				'Password confirmation is required',
+			],
 			validate: {
 				validator: function (this: UserType, el: string): boolean {
+					if (this.isGoogleUser) return true;
 					return this.password === el;
 				},
 				message: 'Passwords do not match',

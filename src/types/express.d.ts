@@ -1,11 +1,11 @@
-// import 'express';
+import 'express';
 
-// declare global {
-// 	namespace Express {
-// 		interface Request {
-// 			user?: UserType;
-// 		}
-// 	}
-// }
+declare global {
+	namespace Express {
+		interface Request {
+			user?: UserType;
+		}
+	}
+}
 
-// export {};
+export {};
